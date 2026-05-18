@@ -14,12 +14,15 @@ class FirestoreWriter:
                 cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
                 
                 if b64_key:
-                    service_account_info = json.loads(base64.b64decode(b64_key))
+                    sanitized_key = b64_key.strip().replace("\n", "").replace("\r", "").replace(" ", "")
+                    service_account_info = json.loads(base64.b64decode(sanitized_key).decode('utf-8'))
                     cred = credentials.Certificate(service_account_info)
                     firebase_admin.initialize_app(cred)
+                    print("SUCCESS: Firestore initialized successfully with Base64 credentials.")
                 elif cred_path:
                     cred = credentials.Certificate(cred_path)
                     firebase_admin.initialize_app(cred)
+                    print("SUCCESS: Firestore initialized successfully with GOOGLE_APPLICATION_CREDENTIALS path.")
                 else:
                     print("WARNING: No Firebase credentials provided. Firestore writes will be mocked.")
                     self.db = None

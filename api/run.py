@@ -251,6 +251,7 @@ def agent_loop():
     linked_count = process_unlinked_missing_persons(writer)
     
     return {
+        "firestore_connected": (writer.db is not None),
         "crises_detected": crises_detected,
         "crises_written": crises_written,
         "false_alarms": false_alarms,
