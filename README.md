@@ -4,7 +4,7 @@ Autonomous crisis intelligence backend for the **NISHAAN** system — deployed a
 
 ## What it does
 
-Every minute (via Vercel Cron), the agent:
+Every minute (via an external cron manager triggering the serverless function), the agent:
 1. **Fetches signals** — weather (OpenWeatherMap), social media (simulated), traffic (simulated)
 2. **Fuses & classifies** — Groups by neighborhood, classifies via Groq LLM (llama-3.1-8b)
 3. **Verifies** — Checks for false alarms with field inspector simulation
@@ -17,7 +17,7 @@ Every minute (via Vercel Cron), the agent:
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/run` | GET | Runs one agent cycle (triggered by cron) |
+| `/api/run` | GET | Runs one agent cycle (triggered externally) |
 | `/api/health` | GET | Health check |
 
 ## Deployment (Vercel)
@@ -53,8 +53,14 @@ In Vercel Dashboard → Settings → Environment Variables, add:
 python -c "import base64; print(base64.b64encode(open('serviceAccountKey.json','rb').read()).decode())"
 ```
 
-### 4. Deploy
-Vercel auto-deploys on push. The cron job (`vercel.json`) runs `/api/run` every minute.
+### 4. Setup Free 1-Minute Cron Trigger (External)
+Since Vercel Hobby accounts restrict native cron jobs to once per day, use a free external service like **[cron-job.org](https://cron-job.org/)**:
+1. Create a free account at [cron-job.org](https://cron-job.org/).
+2. Click **Create Cronjob**.
+3. Set the Title to `Nishaan Agent Loop`.
+4. Set the URL to your deployed Vercel endpoint: `https://your-project.vercel.app/api/run`.
+5. Under **Schedule**, choose **Every 1 minute** (or any interval you prefer).
+6. Click **Create**. It will now trigger your serverless agent live every minute completely for free!
 
 ## Local Development
 

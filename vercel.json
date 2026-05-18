@@ -1,8 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/run",
-      "schedule": "* * * * *"
-    }
-  ]
+  "cleanUrls": true
 }
+
