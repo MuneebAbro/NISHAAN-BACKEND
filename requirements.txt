@@ -1,0 +1,4 @@
+firebase-admin
+requests
+groq
+python-dotenv
