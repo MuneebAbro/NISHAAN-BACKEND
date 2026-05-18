@@ -44,14 +44,35 @@ def log_trace(writer, step, action, reasoning, confidence=None, crisis_id=None, 
     logging.info(log_msg)
     
     if crisis_id:
+        # Convert confidence to integer percentage if it is a float
+        conf_val = None
+        if confidence is not None:
+            try:
+                conf_val = int(float(confidence) * 100)
+            except:
+                conf_val = None
+
+        # Build metadata map expected by Android client
+        meta = {}
+        if input_data:
+            meta["input_data"] = input_data
+        if output_data:
+            meta["output_data"] = output_data
+
+        # Extract person_id if this is a missing person linking step
+        missing_person_id = None
+        if input_data and isinstance(input_data, dict):
+            missing_person_id = input_data.get("person_id")
+
         writer.write_agent_trace({
-            "crisisId": crisis_id,
+            "agent_name": "NISHAAN Autonomous Agent",
+            "crisis_id": crisis_id,
             "step": step,
             "action": action,
-            "reasoning": reasoning,
-            "confidence": confidence,
-            "inputData": input_data or {},
-            "outputData": output_data or {}
+            "reasoning_summary": reasoning,
+            "confidence": conf_val,
+            "metadata": meta,
+            "missing_person_id": missing_person_id
         })
 
 
