@@ -39,7 +39,26 @@ class FirestoreWriter:
             
         doc_ref = self.db.collection('crises').document(crisis_id)
         
-        lat, lon = 24.8607, 67.0011 # default Karachi
+        import random
+        neighborhood_coords = {
+            "Gulshan": (24.9180, 67.0970),
+            "Saddar": (24.8600, 67.0100),
+            "Korangi": (24.8300, 67.1200),
+            "Lyari": (24.8700, 66.9900),
+            "DHA": (24.8000, 67.0700),
+            "Clifton": (24.8150, 67.0300),
+            "Orangi": (24.9500, 66.9600),
+            "Malir": (24.9000, 67.1900),
+            "Kemari": (24.8200, 66.9700),
+            "Nazimabad": (24.9100, 67.0300)
+        }
+        
+        neighborhood = classification.get("neighborhood", "Unknown")
+        base_lat, base_lon = neighborhood_coords.get(neighborhood, (24.8607, 67.0011))
+        
+        # Add slight dispersion offset to prevent exact overlap
+        lat = base_lat + random.uniform(-0.006, 0.006)
+        lon = base_lon + random.uniform(-0.006, 0.006)
         
         c_type_raw = str(classification.get("crisisType", "")).upper()
         if "FLOOD" in c_type_raw:
