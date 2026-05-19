@@ -126,6 +126,7 @@ class FirestoreWriter:
         # Get existing crisis document if it exists to get verification counts
         try:
             existing = doc_ref.get()
+            is_new = not existing.exists
             if existing.exists:
                 existing_data = existing.to_dict()
             else:
@@ -133,6 +134,7 @@ class FirestoreWriter:
         except Exception as e:
             print(f"Error reading existing crisis: {e}")
             existing_data = {}
+            is_new = True
 
         # Feature 1: Verification Counts and Confidence Modifier
         yes = 0
@@ -249,6 +251,25 @@ class FirestoreWriter:
             
         try:
             doc_ref.set(data, merge=True)
+            
+            # Send push notification to all users for new crisis
+            if is_new:
+                try:
+                    from firebase_admin import messaging
+                    title = data.get("title_en", "Emergency Alert")
+                    body = data.get("description_en", "A new crisis has been reported.")
+                    
+                    message = messaging.Message(
+                        notification=messaging.Notification(
+                            title=title,
+                            body=body,
+                        ),
+                        topic='all_users'
+                    )
+                    messaging.send(message)
+                    print(f"SUCCESS: Sent FCM push notification to topic 'all_users' for new crisis {crisis_id}")
+                except Exception as fcm_err:
+                    print(f"WARNING: Failed to send FCM push notification: {fcm_err}")
             
             # Feature 2: Crisis Timeline / Pulse Feed seeding
             from datetime import datetime, timezone, timedelta
