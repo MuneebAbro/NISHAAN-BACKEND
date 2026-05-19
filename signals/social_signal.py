@@ -1,6 +1,28 @@
 import random
 
-NEIGHBORHOODS = ["Gulshan", "Saddar", "Korangi", "Lyari", "DHA", "Clifton", "Orangi", "Malir", "Kemari", "Nazimabad"]
+NEIGHBORHOODS = [
+    # Karachi
+    "Gulshan (Karachi)", "Saddar (Karachi)", "Korangi (Karachi)", "Lyari (Karachi)", 
+    "DHA (Karachi)", "Clifton (Karachi)", "Orangi (Karachi)", "Malir (Karachi)", 
+    "Kemari (Karachi)", "Nazimabad (Karachi)", "Steel Town (Karachi)",
+    # Lahore
+    "Gulberg (Lahore)", "DHA Phase 5 (Lahore)", "Model Town (Lahore)", 
+    "Johar Town (Lahore)", "Anarkali (Lahore)",
+    # Islamabad
+    "Blue Area (Islamabad)", "Sector F-6 (Islamabad)", "Sector G-9 (Islamabad)", 
+    "Sector I-8 (Islamabad)",
+    # Rawalpindi
+    "Saddar (Rawalpindi)", "Bahria Town (Rawalpindi)", "Satellite Town (Rawalpindi)",
+    # Peshawar
+    "Hayatabad (Peshawar)", "University Road (Peshawar)",
+    # Quetta
+    "Hazara Town (Quetta)", "Jinnah Road (Quetta)",
+    # Faisalabad
+    "Clock Tower (Faisalabad)", "D Ground (Faisalabad)",
+    # Multan
+    "Gulgasht Colony (Multan)", "Cantonment (Multan)"
+]
+
 CRISIS_TYPES = ["urban flooding", "heatwave", "road accident", "power outage", "water main burst", "fire", "building collapse"]
 
 def fetch_social_signals(force_multi=False):
@@ -9,7 +31,8 @@ def fetch_social_signals(force_multi=False):
     # Decide if we inject a false alarm scenario (20% chance)
     inject_false_alarm = random.random() < 0.2 and not force_multi
     
-    num_events = 2 if force_multi else 1
+    # Simulate multiple concurrent events (between 3 and 6) to cover multiple cities/areas
+    num_events = random.randint(3, 6) if not inject_false_alarm else 1
     
     for _ in range(num_events):
         target_neighborhood = random.choice(NEIGHBORHOODS)

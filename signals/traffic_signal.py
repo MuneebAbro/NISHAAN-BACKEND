@@ -1,6 +1,27 @@
 import random
 
-NEIGHBORHOODS = ["Gulshan", "Saddar", "Korangi", "Lyari", "DHA", "Clifton", "Orangi", "Malir", "Kemari", "Nazimabad"]
+NEIGHBORHOODS = [
+    # Karachi
+    "Gulshan (Karachi)", "Saddar (Karachi)", "Korangi (Karachi)", "Lyari (Karachi)", 
+    "DHA (Karachi)", "Clifton (Karachi)", "Orangi (Karachi)", "Malir (Karachi)", 
+    "Kemari (Karachi)", "Nazimabad (Karachi)", "Steel Town (Karachi)",
+    # Lahore
+    "Gulberg (Lahore)", "DHA Phase 5 (Lahore)", "Model Town (Lahore)", 
+    "Johar Town (Lahore)", "Anarkali (Lahore)",
+    # Islamabad
+    "Blue Area (Islamabad)", "Sector F-6 (Islamabad)", "Sector G-9 (Islamabad)", 
+    "Sector I-8 (Islamabad)",
+    # Rawalpindi
+    "Saddar (Rawalpindi)", "Bahria Town (Rawalpindi)", "Satellite Town (Rawalpindi)",
+    # Peshawar
+    "Hayatabad (Peshawar)", "University Road (Peshawar)",
+    # Quetta
+    "Hazara Town (Quetta)", "Jinnah Road (Quetta)",
+    # Faisalabad
+    "Clock Tower (Faisalabad)", "D Ground (Faisalabad)",
+    # Multan
+    "Gulgasht Colony (Multan)", "Cantonment (Multan)"
+]
 
 def fetch_traffic_signals():
     traffic_data = {}

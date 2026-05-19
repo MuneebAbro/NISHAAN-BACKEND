@@ -163,6 +163,50 @@ class FirestoreWriter:
         
         import random
         neighborhood_coords = {
+            # Karachi
+            "Gulshan (Karachi)": (24.9180, 67.0970),
+            "Saddar (Karachi)": (24.8600, 67.0100),
+            "Korangi (Karachi)": (24.8300, 67.1200),
+            "Lyari (Karachi)": (24.8700, 66.9900),
+            "DHA (Karachi)": (24.8000, 67.0700),
+            "Clifton (Karachi)": (24.8150, 67.0300),
+            "Orangi (Karachi)": (24.9500, 66.9600),
+            "Malir (Karachi)": (24.9000, 67.1900),
+            "Kemari (Karachi)": (24.8200, 66.9700),
+            "Nazimabad (Karachi)": (24.9100, 67.0300),
+            "Steel Town (Karachi)": (24.8322, 67.3488),
+            # Lahore
+            "Gulberg (Lahore)": (31.5110, 74.3450),
+            "DHA Phase 5 (Lahore)": (31.4690, 74.4080),
+            "Model Town (Lahore)": (31.4820, 74.3210),
+            "Johar Town (Lahore)": (31.4690, 74.2720),
+            "Anarkali (Lahore)": (31.5650, 74.3120),
+            # Islamabad
+            "Blue Area (Islamabad)": (33.7110, 73.0680),
+            "Sector F-6 (Islamabad)": (33.7310, 73.0680),
+            "Sector G-9 (Islamabad)": (33.6850, 73.0300),
+            "Sector I-8 (Islamabad)": (33.6680, 73.0780),
+            # Rawalpindi
+            "Saddar (Rawalpindi)": (33.5950, 73.0560),
+            "Bahria Town (Rawalpindi)": (33.5250, 73.1000),
+            "Satellite Town (Rawalpindi)": (33.6310, 73.0760),
+            # Peshawar
+            "Hayatabad (Peshawar)": (33.9780, 71.4330),
+            "University Road (Peshawar)": (33.9980, 71.4920),
+            # Quetta
+            "Hazara Town (Quetta)": (30.1750, 66.9700),
+            "Jinnah Road (Quetta)": (30.1980, 67.0120),
+            # Faisalabad
+            "Clock Tower (Faisalabad)": (31.4180, 73.0790),
+            "D Ground (Faisalabad)": (31.4080, 73.1070),
+            # Multan
+            "Gulgasht Colony (Multan)": (30.2190, 71.4880),
+            "Cantonment (Multan)": (30.1870, 71.4480)
+        }
+        
+        neighborhood = classification.get("neighborhood", "Unknown")
+        # Support fallback coordinates for compatibility with legacy names or unknown areas
+        legacy_mapping = {
             "Gulshan": (24.9180, 67.0970),
             "Saddar": (24.8600, 67.0100),
             "Korangi": (24.8300, 67.1200),
@@ -174,9 +218,12 @@ class FirestoreWriter:
             "Kemari": (24.8200, 66.9700),
             "Nazimabad": (24.9100, 67.0300)
         }
-        
-        neighborhood = classification.get("neighborhood", "Unknown")
-        base_lat, base_lon = neighborhood_coords.get(neighborhood, (24.8607, 67.0011))
+        if neighborhood in neighborhood_coords:
+            base_lat, base_lon = neighborhood_coords[neighborhood]
+        elif neighborhood in legacy_mapping:
+            base_lat, base_lon = legacy_mapping[neighborhood]
+        else:
+            base_lat, base_lon = (24.8607, 67.0011) # Karachi default fallback
         
         # Add slight dispersion offset to prevent exact overlap
         lat = base_lat + random.uniform(-0.006, 0.006)
@@ -211,6 +258,16 @@ class FirestoreWriter:
         # Feature 3: Predicted Spread / Impact Radius Forecast
         spread_prediction = predict_spread_forecast(mapped_type, sev_raw, neighborhood, base_conf, classification.get("reasoning", ""))
         
+        # Dynamically determine impact radius (in km) depending on severity level + random variation
+        severity_radii = {
+            "CRITICAL": 8.0 + random.uniform(-1.5, 2.0),
+            "HIGH": 5.0 + random.uniform(-1.0, 1.5),
+            "MEDIUM": 3.0 + random.uniform(-0.5, 1.0),
+            "LOW": 1.5 + random.uniform(-0.3, 0.5),
+            "MONITORING": 0.8 + random.uniform(-0.2, 0.4)
+        }
+        radius = severity_radii.get(sev_raw, 3.0)
+
         data = {
             "crisis_type": mapped_type,
             "severity": sev_raw,
@@ -221,7 +278,7 @@ class FirestoreWriter:
             "verification_unsure": unsure,
             "spread_prediction": spread_prediction,
             "centroid": firestore.GeoPoint(lat, lon),
-            "impact_radius_km": 5.0,
+            "impact_radius_km": radius,
             "title_en": f"{mapped_type.replace('_', ' ')} Alert in {neighborhood}",
             "title_ur": f"الرٹ: {neighborhood} میں ہنگامی صورتحال",
             "description_en": messages.get("PUBLIC", classification.get("reasoning", "")) if messages else classification.get("reasoning", ""),
