@@ -135,9 +135,27 @@ class FirestoreWriter:
             existing_data = {}
 
         # Feature 1: Verification Counts and Confidence Modifier
-        yes = existing_data.get("verification_yes", 0)
-        no = existing_data.get("verification_no", 0)
-        unsure = existing_data.get("verification_unsure", 0)
+        yes = 0
+        no = 0
+        unsure = 0
+        try:
+            verifs_ref = doc_ref.collection("verifications").stream()
+            for v_doc in verifs_ref:
+                v_data = v_doc.to_dict()
+                resp = str(v_data.get("response", "")).upper()
+                if resp == "YES":
+                    yes += 1
+                elif resp == "NO":
+                    no += 1
+                elif resp == "UNSURE":
+                    unsure += 1
+            print(f"SUCCESS: Counted verifications from subcollection for crisis {crisis_id}: YES={yes}, NO={no}, UNSURE={unsure}")
+        except Exception as e:
+            print(f"WARNING: Error reading verifications subcollection: {e}. Falling back to parent counts.")
+            yes = existing_data.get("verification_yes", 0)
+            no = existing_data.get("verification_no", 0)
+            unsure = existing_data.get("verification_unsure", 0)
+
         total = yes + no + unsure
         modifier = ((yes - no) / total * 0.2) if total > 0 else 0.0
         
