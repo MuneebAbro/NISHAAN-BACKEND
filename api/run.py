@@ -138,6 +138,81 @@ def process_unlinked_missing_persons(writer):
     return linked_count
 
 
+def check_witness_match(person_desc, sighting_desc):
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        w1 = set(person_desc.lower().split())
+        w2 = set(sighting_desc.lower().split())
+        overlap = w1.intersection(w2)
+        common_keywords = {"shirt", "jeans", "blue", "red", "black", "cap", "bag", "glasses", "tall", "short"}
+        matches = overlap.intersection(common_keywords)
+        similarity = 85 if len(matches) >= 1 else 30
+        return similarity, f"Heuristic visual signature match based on keywords: {', '.join(matches)}" if matches else "No matching keywords."
+
+    from groq import Groq
+    prompt = """You are MATCHER, NISHAAN's missing person similarity matcher.
+Compare the missing person's profile description and a witness sighting report.
+Determine if the sighting is highly likely to be the same missing person (similarity score 0 to 100).
+Return ONLY valid JSON with this exact structure:
+{
+  "similarity_score": number, // integer 0-100
+  "reasoning": string // brief English explanation of visual corroboration (e.g. clothing overlap, height, features)
+}"""
+
+    client = Groq(api_key=api_key)
+    try:
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"{prompt}\n\nMissing Person Description:\n{person_desc}\n\nSighting Report:\n{sighting_desc}"
+                }
+            ],
+            model="llama-3.1-8b-instant",
+            response_format={"type": "json_object"}
+        )
+        res = json.loads(response.choices[0].message.content.strip())
+        return int(res.get("similarity_score", 0)), res.get("reasoning", "")
+    except Exception as e:
+        print(f"Error calling Groq in MATCHER: {e}")
+        return 50, "Error running Groq matcher. Fallback to medium confidence."
+
+
+def process_witness_reports(writer):
+    active_persons = writer.get_all_active_missing_persons()
+    if not active_persons:
+        return 0
+
+    processed_count = 0
+    for person in active_persons:
+        person_id = person['id']
+        reports = writer.get_witness_reports(person_id)
+        
+        unprocessed = [r for r in reports if not r.get('processed')]
+        for report in unprocessed:
+            report_id = report['id']
+            visual_desc = report.get('visual_details', '')
+            person_desc = person.get('description', '')
+            
+            score, reasoning = check_witness_match(person_desc, visual_desc)
+            
+            if score >= 60:
+                log_trace(
+                    writer,
+                    step=8,
+                    action="WITNESS_CORROBORATED",
+                    reasoning=f"🔍 Match similarity {score}%: {reasoning}",
+                    confidence=score / 100.0,
+                    crisis_id=person.get("linked_crisis_id") or "unlinked",
+                    input_data={"person_id": person_id, "sighting_id": report_id, "visual_details": visual_desc}
+                )
+            
+            writer.mark_witness_report_processed(person_id, report_id)
+            processed_count += 1
+
+    return processed_count
+
+
 def agent_loop():
     """Run one cycle of the agent loop. Returns a summary dict."""
     writer = FirestoreWriter()
@@ -270,6 +345,7 @@ def agent_loop():
             
     # After processing all signals, link unlinked missing persons
     linked_count = process_unlinked_missing_persons(writer)
+    witness_reports_processed = process_witness_reports(writer)
     
     return {
         "firestore_connected": (writer.db is not None),
@@ -277,6 +353,7 @@ def agent_loop():
         "crises_written": crises_written,
         "false_alarms": false_alarms,
         "missing_persons_linked": linked_count,
+        "witness_reports_processed": witness_reports_processed,
         "multi_crisis_mode": multi_crisis_injection
     }
 

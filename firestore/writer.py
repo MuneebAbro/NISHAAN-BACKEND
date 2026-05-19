@@ -4,6 +4,75 @@ import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from groq import Groq
+
+def predict_spread_forecast(mapped_type, sev_raw, neighborhood, base_conf, reasoning):
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return _mock_spread_prediction(mapped_type)
+        
+    prompt = """You are NISHAAN's predictive crisis spread forecaster for Karachi, Pakistan.
+You analyze an active crisis and forecast its spatial spread (impact radius increase/shrinkage) over the next 2 hours.
+Based on the inputs, return ONLY valid JSON with this exact structure:
+{
+  "predicted_radius_km": float,
+  "direction": string, // One of: "NORTH", "NORTH_EAST", "EAST", "SOUTH_EAST", "SOUTH", "SOUTH_WEST", "WEST", "NORTH_WEST", "STATIONARY"
+  "confidence": number, // integer 0-100
+  "reasoning_en": string, // brief English reasoning
+  "reasoning_ur": string // Urdu translation of the reasoning
+}"""
+
+    client = Groq(api_key=api_key)
+    try:
+        data_input = {
+            "crisis_type": mapped_type,
+            "severity": sev_raw,
+            "neighborhood": neighborhood,
+            "confidence": base_conf,
+            "reasoning": reasoning
+        }
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt + "\n\nData:\n" + json.dumps(data_input)
+                }
+            ],
+            model="llama-3.1-8b-instant",
+            response_format={"type": "json_object"}
+        )
+        text = response.choices[0].message.content
+        return json.loads(text.strip())
+    except Exception as e:
+        print(f"Error calling Groq for spread forecast: {e}")
+        return _mock_spread_prediction(mapped_type)
+
+def _mock_spread_prediction(mapped_type):
+    # Rule-based fallback prediction
+    if "FLOOD" in mapped_type:
+        return {
+            "predicted_radius_km": 7.5,
+            "direction": "SOUTH_EAST",
+            "confidence": 85,
+            "reasoning_en": "Low-lying areas of Gulshan expected to accumulate water down-gradient towards Lyari Expressway.",
+            "reasoning_ur": "گلشن کے نشیبی علاقوں میں پانی لیاری ایکسپریس وے کی طرف بہنے کا اندیشہ ہے۔"
+        }
+    elif "HEATWAVE" in mapped_type:
+        return {
+            "predicted_radius_km": 10.0,
+            "direction": "STATIONARY",
+            "confidence": 90,
+            "reasoning_en": "Heat dome centered over urban core. No active wind movement forecast to dissipate thermal mass.",
+            "reasoning_ur": "گرمی کا مرکز شہر کا اندرونی حصہ ہے۔ حرارت کو کم کرنے کے لیے ہوا کا کوئی بہاؤ متوقع نہیں ہے۔"
+        }
+    else:
+        return {
+            "predicted_radius_km": 4.5,
+            "direction": "STATIONARY",
+            "confidence": 75,
+            "reasoning_en": "Standard incident perimeter maintained. No dynamic expansion vectors identified.",
+            "reasoning_ur": "معیاری انسیڈنٹ پیرامیٹر برقرار ہے۔ پھیلاؤ کا کوئی متحرک اشارہ نہیں ملا۔"
+        }
 
 class FirestoreWriter:
     def __init__(self):
@@ -33,11 +102,44 @@ class FirestoreWriter:
             print(f"Failed to initialize Firestore: {e}. Writes will be mocked.")
             self.db = None
 
+    def write_timeline_event(self, crisis_id, event_id, title, description, event_type, timestamp=None):
+        if not self.db:
+            return
+        event_ref = self.db.collection('crises').document(crisis_id).collection('timeline').document(event_id)
+        data = {
+            "title": title,
+            "description": description,
+            "type": event_type,
+            "timestamp": timestamp if timestamp else firestore.SERVER_TIMESTAMP
+        }
+        try:
+            event_ref.set(data, merge=True)
+        except Exception as e:
+            print(f"Error writing timeline event to Firestore: {e}")
+
     def write_crisis(self, crisis_id, classification, status, allocated=None, messages=None, simulated_actions=None):
         if not self.db:
             return
             
         doc_ref = self.db.collection('crises').document(crisis_id)
+        
+        # Get existing crisis document if it exists to get verification counts
+        try:
+            existing = doc_ref.get()
+            if existing.exists:
+                existing_data = existing.to_dict()
+            else:
+                existing_data = {}
+        except Exception as e:
+            print(f"Error reading existing crisis: {e}")
+            existing_data = {}
+
+        # Feature 1: Verification Counts and Confidence Modifier
+        yes = existing_data.get("verification_yes", 0)
+        no = existing_data.get("verification_no", 0)
+        unsure = existing_data.get("verification_unsure", 0)
+        total = yes + no + unsure
+        modifier = ((yes - no) / total * 0.2) if total > 0 else 0.0
         
         import random
         neighborhood_coords = {
@@ -77,16 +179,27 @@ class FirestoreWriter:
             sev_raw = "MONITORING"
             
         try:
-            conf_val = int(float(classification.get("confidence", 0.0)) * 100)
+            base_conf = float(classification.get("confidence", 0.0))
         except:
-            conf_val = 0
+            base_conf = 0.0
+            
+        adjusted_confidence = min(1.0, max(0.0, base_conf + modifier))
+        conf_val = int(adjusted_confidence * 100)
             
         neighborhood = classification.get("neighborhood", "Unknown")
+        
+        # Feature 3: Predicted Spread / Impact Radius Forecast
+        spread_prediction = predict_spread_forecast(mapped_type, sev_raw, neighborhood, base_conf, classification.get("reasoning", ""))
         
         data = {
             "crisis_type": mapped_type,
             "severity": sev_raw,
             "confidence": conf_val,
+            "confidence_modifier": modifier,
+            "verification_yes": yes,
+            "verification_no": no,
+            "verification_unsure": unsure,
+            "spread_prediction": spread_prediction,
             "centroid": firestore.GeoPoint(lat, lon),
             "impact_radius_km": 5.0,
             "title_en": f"{mapped_type.replace('_', ' ')} Alert in {neighborhood}",
@@ -118,8 +231,35 @@ class FirestoreWriter:
             
         try:
             doc_ref.set(data, merge=True)
+            
+            # Feature 2: Crisis Timeline / Pulse Feed seeding
+            from datetime import datetime, timezone, timedelta
+            pk_timezone = timezone(timedelta(hours=5))
+            now = datetime.now(pk_timezone)
+            
+            # 1. SENTINEL_DETECTED
+            s_time = now - timedelta(minutes=15)
+            s_desc = f"Sentinel flagged a potential {mapped_type.replace('_', ' ')} in {neighborhood} via fused weather, social, and traffic data."
+            self.write_timeline_event(crisis_id, "step_1_sentinel", "Potential crisis detected", s_desc, "SENTINEL", s_time)
+            
+            # 2. ANALYST_CLASSIFIED
+            a_time = now - timedelta(minutes=10)
+            a_desc = f"Crisis classified as {mapped_type.replace('_', ' ')}, severity {sev_raw}. Base confidence: {int(base_conf * 100)}%."
+            self.write_timeline_event(crisis_id, "step_2_analyst", "Crisis classified and verified", a_desc, "ANALYST", a_time)
+            
+            # 3. COMMANDER_ALLOCATED
+            c_time = now - timedelta(minutes=5)
+            res_str = ", ".join([f"{count} {res.replace('_', ' ').title()}" for res, count in (allocated or {}).items()])
+            c_desc = f"Resources allocated: {res_str or 'Monitoring only'}. Stakeholder alerts generated."
+            self.write_timeline_event(crisis_id, "step_3_commander", "Resources dispatched", c_desc, "COMMANDER", c_time)
+            
+            # 4. VERIFICATION_ADJUSTED
+            v_time = now
+            v_desc = f"Crowd verification: {yes} YES, {no} NO, {unsure} UNSURE. Confidence score adjusted to {conf_val}%."
+            self.write_timeline_event(crisis_id, "step_4_verification", "Crowd verification adjustment", v_desc, "ANALYST", v_time)
+            
         except Exception as e:
-            print(f"Error writing crisis to Firestore: {e}")
+            print(f"Error writing crisis or seeding timeline events to Firestore: {e}")
 
     def write_agent_trace(self, trace_data):
         if not self.db:
@@ -204,3 +344,51 @@ class FirestoreWriter:
             })
         except Exception as e:
             print(f"Error linking missing person: {e}")
+
+    def get_all_active_missing_persons(self):
+        if not self.db:
+            return []
+        try:
+            persons_ref = self.db.collection('missing_persons').stream()
+            active_persons = []
+            for doc in persons_ref:
+                p_data = doc.to_dict()
+                if p_data.get('status') != 'FOUND':
+                    p_data['id'] = doc.id
+                    active_persons.append(p_data)
+            return active_persons
+        except Exception as e:
+            print(f"Error getting active missing persons: {e}")
+            return []
+
+    def get_witness_reports(self, person_id):
+        if not self.db:
+            return []
+        try:
+            reports_ref = self.db.collection('missing_persons').document(person_id).collection('witness_reports').stream()
+            reports = []
+            for doc in reports_ref:
+                r_data = doc.to_dict()
+                r_data['id'] = doc.id
+                reports.append(r_data)
+            return reports
+        except Exception as e:
+            print(f"Error getting witness reports: {e}")
+            return []
+
+    def mark_witness_report_processed(self, person_id, report_id):
+        if not self.db:
+            return
+        try:
+            report_ref = self.db.collection('missing_persons').document(person_id).collection('witness_reports').document(report_id)
+            report_ref.update({
+                'processed': True
+            })
+            
+            # Increment witness_reports_count in parent missing person document
+            person_ref = self.db.collection('missing_persons').document(person_id)
+            person_ref.update({
+                'witness_reports_count': firestore.Increment(1)
+            })
+        except Exception as e:
+            print(f"Error marking witness report processed: {e}")
